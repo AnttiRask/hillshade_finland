@@ -1,0 +1,63 @@
+---
+title: "Hillshade Effects (orig. by Dominic Royé)"
+author: "Antti Rask"
+date: "2023-07-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Hillshade effects
+
+This R Markdown document is me applying the code in Dominic Royé's [blog post](https://dominicroye.github.io/en/2022/hillshade-effects/) about the 'hillshade' shadow effects on relief maps. The twist is that the original maps Dominic uses are of Switzerland and I chose to use the map of Finland, since that's where I hail from.
+
+The three big changes that came from the country change were as follows:
+
+1. Had to search for the Finnish lake boundaries and found the data on the Finnish Environmental Institute [website](https://www.syke.fi/en-US/Open_information/Spatial_datasets/Downloadable_spatial_dataset))
+2. Due to the different shapes that Switzerland and Finland have, I decided to move the legend to the right side of the map instead of the bottom. 
+3. And despite the lyrics in the popular song _Finland, Finland, Finland_ by __Monty Python__, Finland doesn't really have any _'lofty'_ mountains, so had to also adjust the elevations in the legend.
+
+With that, let's get going. I have to warn you that I will keep the commenting to a minimum (mainly to tell you where I've made changes to the original code). If you wish to better understand what's going on at each stage, I suggest you check out Dominic's original [blog post](https://dominicroye.github.io/en/2022/hillshade-effects/).
+
+## Packages
+
+```{r, warning=FALSE}
+library(conflicted) # An Alternative Conflict Resolution Strategy
+library(elevatr)    # Access Elevation Data from Various APIs
+library(ggblend)    # Blending and Compositing Algebra for 'ggplot2'
+library(ggnewscale) # Multiple Fill and Colour Scales in 'ggplot2'
+library(giscoR)     # Download Map Data from GISCO API - Eurostat
+library(sf)         # Simple Features for R
+library(terra)      # Spatial Data Analysis
+library(tidyterra)  # 'tidyverse' Methods and 'ggplot2' Helpers for 'terra' Objects
+library(tidyverse)  # Easily Install and Load the 'Tidyverse'
+library(units)      # Measurement Units for R Vectors
+library(whitebox)   # 'WhiteboxTools' R Frontend
+```
+
+## Data
+
+```{r}
+fin  <- gisco_get_countries(
+    country    = "Finland", 
+    resolution = "03" # 1:3 million
+)
+
+plot(
+    fin,
+    max.plot = 1 # otherwise R will print one map for each column
+)
+```
+
+As I mentioned in the intro, I found the data for the Finnish lake boundaries on the Finnish Environmental Institute [website](https://www.syke.fi/en-US/Open_information/Spatial_datasets/Downloadable_spatial_dataset)).
+
+The file is _Jarvi10.shp_ and is included in the __Shoreline - Lakes (Ranta10)__ [.zip file](https://wwwd3.ymparisto.fi/d3/gis_data/spesific/ranta10jarvet.zip).
+
+```{r}
+# import the lakes boundaries
+lakes  <- st_read("data/Jarvi10.shp")
+lakes
+```
+
