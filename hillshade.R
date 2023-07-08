@@ -4,7 +4,6 @@ library(ggblend)
 library(ggnewscale)
 library(giscoR)
 library(sf)
-library(swissvector4r)
 library(terra)
 library(tidyterra)
 library(tidyverse)
@@ -20,7 +19,7 @@ plot(
 )
 
 ## import the lakes boundaries ----
-lakes  <- st_read("Jarvi10.shp")
+lakes  <- st_read("data/Jarvi10.shp")
 
 ## filter the largest ones ----
 lakes <- lakes %>%
