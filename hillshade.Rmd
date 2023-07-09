@@ -11,20 +11,21 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Hillshade effects
 
-This R Markdown document is me applying the code in Dominic Royé's [blog post](https://dominicroye.github.io/en/2022/hillshade-effects/) about the 'hillshade' shadow effects on relief maps. The twist is that the original maps Dominic uses are of Switzerland and I chose to use the map of Finland, since that's where I hail from.
+This R Markdown document is me applying the code in Dominic Royé's [blog post](https://dominicroye.github.io/en/2022/hillshade-effects/) about the _hillshade_ shadow effects on relief maps. The twist is that the original maps Dominic uses are of Switzerland and I chose to use the map of Finland, since that's where I hail from.
 
 The three big changes that came from the country change were as follows:
 
 1. Had to search for the Finnish lake boundaries and found the data on the Finnish Environmental Institute [website](https://www.syke.fi/en-US/Open_information/Spatial_datasets/Downloadable_spatial_dataset))
-2. Due to the different shapes that Switzerland and Finland have, I decided to move the legend to the right side of the map instead of the bottom. 
+2. Due to the different shapes that Switzerland and Finland have, I decided to move the legend to the right side of the map instead of the bottom.
 3. And despite the lyrics in the popular song _Finland, Finland, Finland_ by __Monty Python__, Finland doesn't really have any _'lofty'_ mountains, so had to also adjust the elevations in the legend.
 
 With that, let's get going. I have to warn you that I will keep the commenting to a minimum (mainly to tell you where I've made changes to the original code). If you wish to better understand what's going on at each stage, I suggest you check out Dominic's original [blog post](https://dominicroye.github.io/en/2022/hillshade-effects/).
 
 ## Packages
 
-```{r, warning=FALSE}
+```{r, message=FALSE, warning=FALSE}
 library(conflicted) # An Alternative Conflict Resolution Strategy
+    conflicts_prefer(dplyr::filter)
 library(elevatr)    # Access Elevation Data from Various APIs
 library(ggblend)    # Blending and Compositing Algebra for 'ggplot2'
 library(ggnewscale) # Multiple Fill and Colour Scales in 'ggplot2'
@@ -58,6 +59,492 @@ The file is _Jarvi10.shp_ and is included in the __Shoreline - Lakes (Ranta10)__
 ```{r}
 # import the lakes boundaries
 lakes  <- st_read("data/Jarvi10.shp")
+
 lakes
 ```
 
+Finland has more lakes than Switzerland, but I ended up using the same filtering principle of lake area being over 50 km2. _pAla_ha_ is the column with the area of the lakes, but it's in hectares, so first we need some conversion.
+
+Likewise, I'm only using lakes that are inside the Finnish borders. _valtio_ translates to country code and we can use it for that.
+
+```{r}
+## filter the largest ones ----
+lakes <- lakes %>%
+    mutate(areakm = set_units(pAla_ha, "hectare") %>% set_units("km2")) %>% 
+    arrange(desc(areakm)) %>%
+    filter(
+        valtio == "FI",
+        areakm > set_units(50, "km2")
+    )
+
+lakes
+```
+
+```{r}
+plot(
+    lakes,
+    max.plot = 1
+)
+```
+
+## Digital Elevation Model (DEM)
+
+```{r}
+# get the DEM with get_elev_raster
+mdt <- get_elev_raster(
+    fin,
+    z = 8 # the bigger the z (zoom), the longer it takes to load
+)
+
+mdt
+```
+
+```{r}
+plot(mdt)
+```
+
+```{r}
+# convert to terra and mask area of interest
+mdt <- mdt %>%
+    rast() %>%
+    mask(vect(fin))
+
+# reproject
+mdt <- mdt %>% 
+    project(crs(lakes))
+
+# reproject vect
+fin <- fin %>% 
+    st_transform(st_crs(lakes))
+
+fin
+```
+
+```{r}
+# convert the raster into xyz
+mdt_tbl <- as.data.frame(
+    mdt,
+    xy = TRUE
+) %>% 
+    as_tibble()
+
+names(mdt_tbl)[3] <- "alt"
+
+mdt_tbl
+```
+
+We have to change the scale for the legend, since, as mentioned before, Finland doesn't have any mountains.
+
+Also, since we're already using the _guides()_ function to manipulate the different aspects of the legend, we can double down on that and leave out the _themes()_ function altogether.
+
+And as mentioned before, the legend is vertical, due to the shape of Finland, compared to Switzerland.
+
+All of the above is true for each of the maps, but I won't repeat myself before each of them. Now you know.
+
+```{r}
+# map
+p1 <- mdt_tbl %>%
+    ggplot() +
+    geom_raster(aes(x, y, fill = alt)) +
+    geom_sf(
+        data  = lakes,
+        fill  = "#c6dbef",
+        color = NA
+    ) +
+    scale_fill_hypso_tint_c(
+        breaks = c(
+            100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
+        )
+    ) +
+    guides(
+        fill = guide_colorsteps(
+            barwidth       = .5,
+            barheight      = 20,
+            title          = "m",
+            title.position = "top",
+            direction      = "vertical"
+        )
+    ) +
+    coord_sf() +
+    theme_void()
+
+p1
+```
+
+The .png files in the __img__ folders have been made with the _ggsave()_ function. I've commented out the code. Unless you make changes to the maps themselves, there's no need to run any of them.
+
+Again, due to having a different shape maps, I decided to use the vertical setup (A4) for the .png files. 
+
+```{r}
+# ggsave(
+#     "img/01_finland_DEM.png",
+#     p1,
+#     width  = 8.3,
+#     height = 11.7,
+#     unit   = "in",
+#     device = png,
+#     type   = "cairo",
+#     bg     = "white"
+# )
+```
+
+## Calculate the hillshade
+
+```{r}
+## estimate the slope ----
+sl <- terrain(
+    mdt,
+    "slope",
+    unit = "radians"
+)
+
+plot(sl)
+```
+
+```{r}
+## estimate the aspect or orientation ----
+asp <- terrain(
+    mdt,
+    "aspect",
+    unit = "radians"
+)
+
+plot(asp)
+```
+
+```{r}
+# calculate the hillshade effect with 45º of elevation
+hill_single <- shade(
+    sl,
+    asp,
+    angle     = 45,
+    direction = 300,
+    normalize = TRUE
+)
+
+# final hillshade
+plot(
+    hill_single,
+    col = grey(1:100/100)
+)
+```
+
+## Combine the relief and shadow effect
+
+```{r}
+# convert the hillshade to xyz
+hill_single_tbl <- as.data.frame(
+    hill_single,
+    xy = TRUE
+) %>% 
+    as_tibble()
+
+hill_single_tbl
+```
+
+```{r}
+# map
+p2 <- hill_single_tbl %>%
+    ggplot() +
+    geom_raster(
+        aes(x, y, fill = hillshade),
+        show.legend = FALSE
+    ) +
+    scale_fill_distiller(palette = "Greys") +
+    new_scale_fill() +
+    geom_raster(
+        data = mdt_tbl,
+        aes(x, y, fill = alt),
+        alpha = .7
+    ) +
+    scale_fill_hypso_tint_c(
+        breaks = c(
+            100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
+        )
+    ) +
+    geom_sf(
+        data = lakes,
+        fill = "#c6dbef",
+        color = NA
+    ) +
+    guides(
+        fill = guide_colorsteps(
+            barwidth       = .5,
+            barheight      = 20,
+            title          = "m",
+            title.position = "top",
+            direction      = "vertical"
+        )
+    ) +
+    coord_sf() +
+    theme_void()
+
+p2
+```
+
+```{r}
+# ggsave(
+#     "img/02_finland_relief_and_shadow.png",
+#     p2,
+#     width  = 8.3,
+#     height = 11.7,
+#     unit   = "in",
+#     device = png,
+#     type   = "cairo",
+#     bg     = "white"
+# )
+```
+
+## Multidirectional shadows
+
+```{r}
+# pass multiple directions to shade()
+hill_multi <- map(c(270, 15, 60, 330), function(dir){ 
+    
+    shade(
+        sl,
+        asp, 
+        angle     = 45, 
+        direction = dir,
+        normalize = TRUE
+    )
+})
+
+# create a multidimensional raster and reduce it by summing up
+hill_multi <- rast(hill_multi) %>%
+    sum()
+
+# multidirectional
+plot(
+    hill_multi,
+    col = grey(1:100/100)
+)
+```
+
+```{r}
+# convert the hillshade to xyz
+hill_multi_tbl <- as.data.frame(
+    hill_multi,
+    xy = TRUE
+) %>%
+    as_tibble()
+
+hill_multi_tbl
+```
+
+```{r}
+# map
+p3 <- ggplot() +
+    geom_raster(
+        data = hill_multi_tbl,
+        aes(x, y, fill = sum),
+        show.legend = FALSE
+    ) +
+    scale_fill_distiller(palette = "Greys") +
+    new_scale_fill() +
+    geom_raster(
+        data = mdt_tbl,
+        aes(x, y, fill = alt),
+        alpha = .7
+    ) +
+    scale_fill_hypso_tint_c(
+        breaks = c(
+            100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
+        )
+    ) +
+    geom_sf(
+        data = lakes,
+        fill = "#c6dbef",
+        color = NA
+    ) +
+    guides(
+        fill = guide_colorsteps(
+            barwidth       = .5,
+            barheight      = 20,
+            title          = "m",
+            title.position = "top",
+            direction      = "vertical"
+        )
+    ) +
+    coord_sf() +
+    theme_void()
+
+p3
+```
+
+```{r}
+# ggsave(
+#     "img/03_finland_multidirectional.png",
+#     p3,
+#     width  = 8.3,
+#     height = 11.7,
+#     unit   = "in",
+#     device = png,
+#     type   = "cairo",
+#     bg     = "white"
+# )
+```
+
+### Using the {ggblend} package
+
+Unlike the previous three, the fourth plot doesn't work properly until it has been saved as a .png file. That's why I'm not even trying to display it here.
+
+```{r}
+# map
+p4 <- ggplot() +
+    list(
+        geom_raster(
+            data = hill_multi_tbl,
+            aes(x, y, fill = sum),
+            show.legend = FALSE
+        ),
+        scale_fill_distiller(palette = "Greys"),
+        new_scale_fill(),
+        geom_raster(
+            data = mdt_tbl,
+            aes(x, y, fill = alt),
+            alpha = .7
+        ),
+        scale_fill_hypso_tint_c(
+            breaks = c(
+                100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
+            )
+        )
+    ) %>% blend("multiply") +
+    geom_sf(
+        data  = lakes,
+        fill  = "#c6dbef",
+        color = NA
+    ) +
+    guides(
+        fill = guide_colorsteps(
+            barwidth       = .5,
+            barheight      = 20,
+            title          = "m",
+            title.position = "top",
+            direction      = "vertical"
+        )
+    ) +
+    coord_sf() +
+    theme_void()
+```
+
+```{r}
+# ggsave(
+#     "img/04_finland_multidirectional_ggblend.png",
+#     p4,
+#     width  = 8.3,
+#     height = 11.7,
+#     unit   = "in",
+#     device = png,
+#     type   = "cairo",
+#     bg     = "white"
+# )
+```
+
+## Another alternative for multidirectional shadows
+
+```{r}
+# instal whitebox
+install_whitebox()
+```
+
+```{r}
+# export the DEM
+writeRaster(
+    mdt,
+    "img/mdt.tiff",
+    overwrite = TRUE)
+
+# launch whitebox
+wbt_init()
+```
+
+```{r}
+# create the hillshade
+wbt_multidirectional_hillshade(
+    "img/mdt.tiff",
+    "img/hillshade.tiff"
+)
+```
+
+```{r}
+# re-import the hillshade
+hill_wb <- rast("img/hillshade.tiff")
+
+plot(hill_wb)
+```
+
+```{r}
+# remask
+hill_wb <- mask(
+    hill_wb,
+    vect(fin)
+)
+
+plot(hill_wb)
+```
+
+```{r}
+# convert the hillshade to xyz
+hill_wb_tbl <- as.data.frame(
+    hill_wb,
+    xy = TRUE
+) %>%
+    as_tibble()
+
+hill_wb_tbl
+```
+
+```{r}
+# map
+p5 <- ggplot() +
+    geom_raster(
+        data = hill_wb_tbl,
+        aes(x, y, fill = hillshade),
+        show.legend = FALSE
+    ) +
+    scale_fill_distiller(palette = "Greys") +
+    new_scale_fill() +
+    geom_raster(
+        data = mdt_tbl,
+        aes(x, y, fill = alt),
+        alpha = .7
+    ) +
+    scale_fill_hypso_tint_c(
+        breaks = c(
+            100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
+        )
+    ) +
+    geom_sf(
+        data  = lakes,
+        fill  = "#c6dbef",
+        color = NA
+    ) +
+    guides(
+        fill = guide_colorsteps(
+            barwidth       = .5,
+            barheight      = 20,
+            title          = "m",
+            title.position = "top",
+            direction      = "vertical"
+        )
+    ) +
+    coord_sf() +
+    theme_void()
+
+p5
+```
+
+```{r}
+# ggsave(
+#     "img/05_finland_multidirectional_whitebox.png",
+#     p5,
+#     width  = 8.3,
+#     height = 11.7,
+#     unit   = "in",
+#     device = png,
+#     type   = "cairo",
+#     bg     = "white"
+# )
+```
