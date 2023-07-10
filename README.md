@@ -1,3 +1,5 @@
+![](img/youcanbeapirate-wb-sparkline.jpg)
+
 # Hillshade effects - The Finnish Edition
 
 This R Markdown document is me applying the code in __Dominic Royé__'s [blog post](https://dominicroye.github.io/en/2022/hillshade-effects/) about the _hillshade_ shadow effects on relief maps. The twist is that the original maps Dominic uses are of Switzerland and I chose to use the map of Finland, since that's where I hail from.
