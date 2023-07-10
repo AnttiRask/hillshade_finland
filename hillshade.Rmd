@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Hillshade effects
 
-This R Markdown document is me applying the code in Dominic Royé's [blog post](https://dominicroye.github.io/en/2022/hillshade-effects/) about the _hillshade_ shadow effects on relief maps. The twist is that the original maps Dominic uses are of Switzerland and I chose to use the map of Finland, since that's where I hail from.
+This R Markdown document is me applying the code in __Dominic Royé__'s [blog post](https://dominicroye.github.io/en/2022/hillshade-effects/) about the _hillshade_ shadow effects on relief maps. The twist is that the original maps Dominic uses are of Switzerland and I chose to use the map of Finland, since that's where I hail from.
 
 The three big changes that came from the country change were as follows:
 
